@@ -11,7 +11,7 @@ import seaborn as sns
 from sklearn import linear_model
 from plotly.offline import download_plotlyjs, init_notebook_mode, iplot
 import scipy
-import mklfft 
+import os
 
 
 maturities = asarray([3, 6, 9, 12, 15, 18,21, 24, 30, 36, \
@@ -27,7 +27,10 @@ def loadData():
 	tau = ['Date', '1 MO',  '3 MO',  '6 MO',  '9 MO', '12 MO', '15 MO', '18 MO', '21 MO',  \
 	               '24 MO', '30 MO', '36 MO', '48 MO', '60 MO', '72 MO', '84 MO', '96 MO', \
 	               '108 MO', '120MO']
-	ratedata = pd.read_csv('/Users/michael/git/Diebold_BondYield/FBFitted.csv', index_col=0)
+
+	__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+	loc = os.path.join(__location__ + '/Data/FBFitted.csv')
+	ratedata = pd.read_csv(loc, index_col=0)
 
 	_load2 = lambda x: (1.-exp(-lam_t*x)) / (lam_t*x)
 	_load3 = lambda x: ((1.-exp(-lam_t*x)) / (lam_t*x)) - \
@@ -121,12 +124,175 @@ def yieldContors(ratedata):
 	                    size=16)
 	                ),  
 	            yaxis=dict(
-	                title='Yield (percent)',
+	                title='Date',
 	                titlefont=dict(
 	                    size=16)
 	                )
+
+
 	    )
 
 	fig = go.Figure(data=data, layout=layout)
 
 	return fig
+
+
+def exampleYield(ratedata, loc):
+	if type(loc) != list:
+		print('You must input a list')
+
+	if len(loc) ==1:
+		tit = str(ratedata.index[loc[0]])
+	else:
+		tit = "Sample Yield Curves"
+	layout = go.Layout(
+            width=640,
+            height=480,
+            title=tit,
+            titlefont=dict(
+                size=24),
+    
+            xaxis=dict(
+                title='Maturity (months)',
+                titlefont=dict(
+                    size=20)
+                ),  
+            yaxis=dict(
+                title='Yield (percent)',
+                titlefont=dict(
+                    size=20)
+                ),
+        
+            legend=dict(
+                font=dict(
+                    size=12))
+
+                )
+            
+	return ratedata.iloc[loc,:].transpose().iplot(kind='scatter', layout=layout)
+
+
+def beta_resid(residuals):
+	resid_interest = residuals.ix[:,['3','6', '12', '24', '60', '120']]
+	layout = go.Layout(
+				title='Residuals for selected maturities (months)',
+	            titlefont=dict(
+	                size=18),
+	            legend= dict(
+	                font=dict(
+	                    size=16)),
+	#             title='Residuals for selected maturity periods',
+	            width=640,
+	            height=480,
+	            )
+	return resid_interest.iplot(subplots=True, \
+		title='Residuals for selected maturity periods', layout=layout)
+
+
+
+def beta_dist(beta_fits):
+	fig, axes = plt.subplots(1,3, figsize=(10,7))
+	fig.suptitle('Fitted Parameters Histogram')
+	sns.set(font_scale=1)
+	d = sns.distplot(beta_fits.ix[:,'beta1'], ax=axes[0])
+	d = sns.distplot(beta_fits.ix[:,'beta2'], ax=axes[1])
+	d = sns.distplot(beta_fits.ix[:,'beta3'], ax=axes[2])
+
+	return fig
+
+
+def fig7(ratedata, beta_fits):
+	beta1_hat = ratedata.ix[:, '120']
+	beta2_hat = ratedata.ix[:,'120'] - ratedata.ix[:,'3']
+	beta3_hat = 2*ratedata.ix[:,'24'] - \
+		(ratedata.ix[:,'120'] + ratedata.ix[:,'3'])
+
+	layout = go.Layout(
+				title='Residuals for selected maturities (months)',
+	            titlefont=dict(
+	                size=18),
+	            legend= dict(
+	                font=dict(
+	                    size=16)),
+	#             title='Residuals for selected maturity periods',
+	            width=640,
+	            height=480,
+	            )
+
+
+	fig = py.tools.make_subplots(rows=3, 
+		shared_xaxes=True, print_grid=False,subplot_titles=(
+			'Level', 'Slope', 'Curvature' ))
+
+	beta1a = go.Scatter(
+			x = beta1_hat.index, 
+			y = beta1_hat, 
+			name = 'Emprical')
+
+	beta1b = go.Scatter(
+			x = beta_fits.index,
+			y = beta_fits.ix[:,'beta1'], 
+			name='Fitted')
+
+	beta2a = go.Scatter(
+			x = beta2_hat.index, 
+			y = beta2_hat, 
+			name = 'Emprical')
+
+	beta2b = go.Scatter(
+			x = beta_fits.index,
+			y = -beta_fits.ix[:,'beta2'], 
+			name='Fitted')
+
+	beta3a = go.Scatter(
+			x = beta3_hat.index, 
+			y = beta3_hat, 
+			name = 'Emprical')
+
+	beta3b = go.Scatter(
+			x = beta_fits.index,
+			y = .3*beta_fits.ix[:,'beta3'], 
+			name='Fitted')
+
+	fig.append_trace(beta1a,1,1)
+	fig.append_trace(beta1b, 1,1)
+
+	fig.append_trace(beta2a,2,1)
+	fig.append_trace(beta2b, 2,1)
+
+	fig.append_trace(beta3a,3,1)
+	fig.append_trace(beta3b, 3,1)
+
+	return fig
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
