@@ -115,7 +115,7 @@ def yieldContors(ratedata):
 	    ]
 
 	layout = go.Layout(
-	    title='Yields vs. Maturities',
+	    title='Fig 2: Yields vs. Maturities',
 	    width=640,
 	    height=480,
 	                xaxis=dict(
@@ -142,9 +142,9 @@ def exampleYield(ratedata, loc):
 		print('You must input a list')
 
 	if len(loc) ==1:
-		tit = str(ratedata.index[loc[0]])
+		tit = str('Fig 3: '+ ratedata.index[loc[0]])
 	else:
-		tit = "Sample Yield Curves"
+		tit = "Fig 3: Sample Yield Curves"
 	layout = go.Layout(
             width=640,
             height=480,
@@ -214,7 +214,6 @@ def fig7(ratedata, beta_fits):
 	            legend= dict(
 	                font=dict(
 	                    size=16)),
-	#             title='Residuals for selected maturity periods',
 	            width=640,
 	            height=480,
 	            )
@@ -263,15 +262,45 @@ def fig7(ratedata, beta_fits):
 	fig.append_trace(beta3a,3,1)
 	fig.append_trace(beta3b, 3,1)
 
+	fig['layout'].update(layout)
 	return fig
 
 
 
+def ACF_beta(beta_fits, fitted_resid):
+	titlefont = {'fontsize': 14}
+	fig = plt.figure(figsize=(20,12))
+	ax1 = fig.add_subplot(321)
+	f = sm.graphics.tsa.plot_acf(beta_fits.ix[:,0].values.squeeze(),\
+                             lags=60, ax=ax1)
+	ax1.set_title('ACF for Level', **titlefont)
 
+	ax2 = fig.add_subplot(322)
+	f = sm.graphics.tsa.plot_pacf(beta_fits.ix[:,0].values.squeeze(),\
+	                             lags=60, ax=ax2)
+	ax2.set_title('PACF for Level', **titlefont)
 
+	ax3 = fig.add_subplot(323)
+	f = sm.graphics.tsa.plot_acf(beta_fits.ix[:,1].values.squeeze(),\
+	                             lags=60, ax=ax3)
+	ax3.set_title('ACF for Slope', **titlefont)
 
+	ax4 = fig.add_subplot(324)
+	f = sm.graphics.tsa.plot_pacf(beta_fits.ix[:,1].values.squeeze(),\
+	                             lags=60, ax=ax4)
+	ax4.set_title('PACF for Slope', **titlefont)
 
+	ax5 = fig.add_subplot(325)
+	f = sm.graphics.tsa.plot_acf(beta_fits.ix[:,2].values.squeeze(),\
+	                             lags=60, ax=ax5)
+	ax5.set_title('ACF for Curvature', **titlefont)
 
+	ax6 = fig.add_subplot(326)
+	f = sm.graphics.tsa.plot_pacf(beta_fits.ix[:,2].values.squeeze(),\
+	                             lags=60, ax=ax6)
+	ax6.set_title('PACF for Curvature', **titlefont)
+
+	fig.tight_layout()
 
 
 
