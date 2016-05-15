@@ -12,12 +12,17 @@ from sklearn import linear_model
 from plotly.offline import download_plotlyjs, init_notebook_mode, iplot
 import scipy
 import os
+import pywt
 
 
 maturities = asarray([3, 6, 9, 12, 15, 18,21, 24, 30, 36, \
                      48, 60, 72, 84, 96, 108, 120])
 
 beta_names = ['beta1', 'beta2', 'beta3']
+lam_t = .0609
+_load2 = lambda x: (1.-exp(-lam_t*x)) / (lam_t*x)
+_load3 = lambda x: ((1.-exp(-lam_t*x)) / (lam_t*x)) - \
+exp(-lam_t*x)
 
 def loadData():
 	# load datasets + define parameters 
@@ -105,6 +110,25 @@ def table3(beta_fits):
 	return table3
 
 
+def table4(forecast, actual):
+	idx_1994 = actual.index.get_loc(dt.datetime.strptime('1994-01-31', '%Y-%m-%d'))
+	idx_2000 = actual.index.get_loc(dt.datetime.strptime('2000-12-29', '%Y-%m-%d'))
+
+	err =  actual.ix[idx_1994:idx_2000,:] - forecast
+	table = pd.DataFrame(zeros((5, 5)), index=['3', '12' ,'36', '60', '120'], \
+    	columns=['mean', 'std. dev.', 'RMSE', 'ACF(1)', 'ACF(12)'])
+    
+	for idx in table.index:
+		table.ix[idx, 'mean' ] = err.ix[:,idx].mean()
+		table.ix[idx, 'std. dev.' ] = err.ix[:,idx].std()
+		table.ix[idx, 'RMSE' ] = sqrt(pow(err.ix[:,idx],2).mean())
+		table.ix[idx, 'ACF(1)' ] = sm.tsa.acf(err.ix[:, idx])[1]
+		table.ix[idx, 'ACF(12)' ] = sm.tsa.acf(err.ix[:, idx])[13]
+
+
+	return table
+
+
 def yieldContors(ratedata):
 
 	data = [
@@ -189,7 +213,6 @@ def beta_resid(residuals):
 		title='Residuals for selected maturity periods', layout=layout)
 
 
-
 def beta_dist(beta_fits):
 	fig, axes = plt.subplots(1,3, figsize=(10,7))
 	fig.suptitle('Fitted Parameters Histogram')
@@ -266,7 +289,6 @@ def fig7(ratedata, beta_fits):
 	return fig
 
 
-
 def ACF_beta(beta_fits, fitted_resid):
 	titlefont = {'fontsize': 14}
 	fig = plt.figure(figsize=(20,12))
@@ -303,11 +325,116 @@ def ACF_beta(beta_fits, fitted_resid):
 	fig.tight_layout()
 
 
+def ARforecast(ratedata, beta_fits):
+	# clip the data to only go to 1994
+	idx_1994 = ratedata.index.get_loc(dt.datetime.strptime('1994-01-31', '%Y-%m-%d'))
+	idx_2000 = ratedata.index.get_loc(dt.datetime.strptime('2000-12-29', '%Y-%m-%d'))
+
+	# from the CWT, predict each level using an AR model 
+	N_out = idx_2000 - idx_1994 # N out of sample
+
+	beta_predict = pd.DataFrame(zeros((N_out, 3)), \
+	    index=beta_fits.index[idx_1994:idx_2000], columns=beta_fits.columns)
+
+	yield_forecast = pd.DataFrame(zeros((N_out, len(ratedata.columns))), \
+	    index=beta_fits.index[idx_1994:idx_2000], columns=ratedata.columns)
+
+	beta_predict_nieve = pd.DataFrame(zeros((N_out, 3)), \
+	    index=beta_fits.index[idx_1994:idx_2000], columns=beta_fits.columns)
+
+	yield_forecast_nieve = pd.DataFrame(zeros((N_out, len(ratedata.columns))), \
+	    index=beta_fits.index[idx_1994:idx_2000
+	                         ], columns=ratedata.columns)
+
+	def perDone(i, length, goal):
+	    if i != 0:
+	        if (float(i)/length) *100 > goal:
+	            print("{}% done".format(goal))
+	            return 10.;
+	        else:
+	            return 0
+	    else: return 0
+	    
+	# we want to save all the fits so we can analyze the noise spectrum
+	saveRuns =[]
+	# for each date in the withheld series
+	d = 10.
+	wavelet = 'db2'
+	i = 0;
+	for date in range(0, N_out):
+	    d_updt = perDone(date, N_out, d)
+	    d = d_updt + d
+	    now = idx_1994+date # step each turn to fit
+
+	    for beta in beta_fits.columns:
+	        testb = beta_fits.ix[i:(now),beta]
+	        coeff = pywt.swt(testb, wavelet)
+
+	        # coeff will return a list of [level, 2, len(data)]
+	        # each of the levels will have the trend and stochiastic componet
+	        # so we will predict the trend via AR and add a random var 
+
+	        
+	        # make the nieve AR forecast
+	        model = sm.tsa.AR(beta_fits.ix[:now,beta]).fit(maxlag=1, \
+	                                                       method='cmle')
+	        # the len of the data must be even, so shift forward one
+	        try:
+	            beta_predict_nieve.ix[date, beta] = \
+	            model.predict(len(beta_fits.ix[:now,beta])-1\
+	                          ,len(beta_fits.ix[:now,beta])).iloc[-1]
+	        except KeyError:
+	            pdb.set_trace()
+	        
+	        # for each of the levels in wavelet 
+	        for level in coeff:
+	            for detail in range(0,len(level)):
+	                model = sm.tsa.AR(level[detail])# fit the model
+	                params = model.fit(maxlag=1, method='cmle').params
+	                # predict the next beta 
+	                prediction = model.predict(params, len(level[detail])-1, len(level[detail]))[-1]
+	                # roll append the predicted data and roll forward
+	                level[detail][:] = hstack((level[detail][1:], prediction))
+	       
+	        # reconstruct the og signal from the wavlet
+	        try:
+	            pred = []
+	            N_lvl = shape(coeff)[0]
+	            # starts with N, so counting back all the way to sqrt(2)
+	            for t in range(0, N_lvl):
+	                try:
+	#                     pdb.set_trace()
+	                    # make the stochasitic shock
+	                    pred.append((coeff[t][0][-1] + (coeff[t][1][-5])) / sqrt(2)**(N_lvl-t))
+	#                     pred.append((coeff[t][0][-1] + coeff[t][1][-1]) / sqrt(2)**(N_lvl-t))
 
 
 
 
+	                except IndexError:
+	                    pdb.set_trace()
+	                    
+	            beta_predict.ix[date,beta] = mean(pred)
+	        except ValueError:
+	            pdb.set_trace()
+	    # forecast the yields at specific maturities 
+	    try:
+	        yield_forecast.ix[date,:] = beta_predict.ix[date, 'beta1'] + \
+	            beta_predict.ix[date, 'beta2']*_load2(asarray(maturities)) +\
+	            beta_predict.ix[date, 'beta3']*_load3(asarray(maturities))
 
+	        yield_forecast_nieve.ix[date,:] = beta_predict_nieve.ix[date, 'beta1'] + \
+	            beta_predict_nieve.ix[date, 'beta2']*_load2(asarray(maturities)) +\
+	            beta_predict_nieve.ix[date, 'beta3']*_load3(asarray(maturities))
+	            
+	        saveRuns.append(coeff)
+	    except TypeError:
+	        pdb.set_trace()
+	        
+	    i = i +1
+
+
+	return yield_forecast_nieve, yield_forecast, saveRuns
 
 
 
