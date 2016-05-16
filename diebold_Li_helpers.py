@@ -110,11 +110,18 @@ def table3(beta_fits):
 	return table3
 
 
-def table4(forecast, actual):
+def table4(forecast, actual, naive):
 	idx_1994 = actual.index.get_loc(dt.datetime.strptime('1994-01-31', '%Y-%m-%d'))
 	idx_2000 = actual.index.get_loc(dt.datetime.strptime('2000-12-29', '%Y-%m-%d'))
+	if naive == False:
+		forecast = roll(forecast.ix[:,:], -1, axis=0) 
 
-	err =  actual.ix[idx_1994:idx_2000,:] - forecast
+		forecast = pd.DataFrame(forecast)
+
+		forecast.index = actual.index[idx_1994:idx_2000]
+		forecast.columns = actual.columns
+
+	err =  actual.ix[idx_1994:idx_2000-1,:] - forecast.ix[:-1,:]
 	table = pd.DataFrame(zeros((5, 5)), index=['3', '12' ,'36', '60', '120'], \
     	columns=['mean', 'std. dev.', 'RMSE', 'ACF(1)', 'ACF(12)'])
     
@@ -402,6 +409,13 @@ def ARforecast(ratedata, beta_fits):
 	    index=beta_fits.index[idx_1994:idx_2000
 	                         ], columns=ratedata.columns)
 
+	beta_predict_random = pd.DataFrame(zeros((N_out, 3)), \
+	    index=beta_fits.index[idx_1994:idx_2000], columns=beta_fits.columns)
+
+	yield_forecast_random =  pd.DataFrame(zeros((N_out, len(ratedata.columns))), \
+	    index=beta_fits.index[idx_1994:idx_2000
+	                         ], columns=ratedata.columns)
+
 	def perDone(i, length, goal):
 	    if i != 0:
 	        if (float(i)/length) *100 > goal:
@@ -436,9 +450,14 @@ def ARforecast(ratedata, beta_fits):
 	                                                       method='cmle')
 	        # the len of the data must be even, so shift forward one
 	        try:
-	            beta_predict_nieve.ix[date, beta] = \
-	            model.predict(len(beta_fits.ix[:now,beta])-1\
-	                          ,len(beta_fits.ix[:now,beta])).iloc[-1]
+				beta_predict_nieve.ix[date, beta] = \
+				model.predict(len(beta_fits.ix[:now,beta])-1\
+				              ,len(beta_fits.ix[:now,beta])).iloc[-1]
+
+				beta_predict_random.ix[date, beta] = \
+					beta_fits.ix[now-1, beta] +\
+					 (beta_fits.ix[now-1, beta].std())*random.randn()
+
 	        except KeyError:
 	            pdb.set_trace()
 	        
@@ -483,6 +502,11 @@ def ARforecast(ratedata, beta_fits):
 	            beta_predict_nieve.ix[date, 'beta2']*_load2(asarray(maturities)) +\
 	            beta_predict_nieve.ix[date, 'beta3']*_load3(asarray(maturities))
 	            
+
+	        yield_forecast_random.ix[date,:] = beta_predict_random.ix[date, 'beta1'] + \
+	            beta_predict_random.ix[date, 'beta2']*_load2(asarray(maturities)) +\
+	            beta_predict_random.ix[date, 'beta3']*_load3(asarray(maturities))
+	            
 	        saveRuns.append(coeff)
 	    except TypeError:
 	        pdb.set_trace()
@@ -490,9 +514,80 @@ def ARforecast(ratedata, beta_fits):
 	    i = i +1
 
 
-	return yield_forecast_nieve, yield_forecast, saveRuns
+	return yield_forecast_nieve, yield_forecast, yield_forecast_random, saveRuns
 
 
+def cwtGraph(beta_fits):
+	fig = plt.figure(figsize=(10,7))
+	ax1 = fig.add_subplot(131)
+	cwtmatr= scipy.signal.cwt(beta_fits.ix[:,'beta1'], scipy.signal.ricker, arange(1, 100))
+
+	ax1.imshow(cwtmatr, extent=[0, cwtmatr.shape[1], 1, cwtmatr.shape[0]], cmap='PRGn', \
+	           aspect='auto', vmax=abs(cwtmatr).max(), vmin=-abs(cwtmatr).max())
+	ax1.set_xlabel('Time (months)')
+	ax1.set_title('Beta1')
+	ax1.set_ylabel('Scale')
+
+	ax2 = fig.add_subplot(132)
+	cwtmatr= scipy.signal.cwt(beta_fits.ix[:,'beta2'], scipy.signal.ricker, arange(1, 100))
+
+	ax2.imshow(cwtmatr, extent=[0, cwtmatr.shape[1], 1, cwtmatr.shape[0]], cmap='PRGn', \
+	           aspect='auto', vmax=abs(cwtmatr).max(), vmin=-abs(cwtmatr).max())
+	ax2.set_xlabel('Time (months)')
+	ax2.set_ylabel('Scale')
+	ax2.set_title('Beta2')
+
+
+	ax3 = fig.add_subplot(133)
+	cwtmatr= scipy.signal.cwt(beta_fits.ix[:,'beta3'], scipy.signal.ricker, arange(1, 100))
+
+	ax3.imshow(cwtmatr, extent=[0, cwtmatr.shape[1], 1, cwtmatr.shape[0]], cmap='PRGn', \
+	           aspect='auto', vmax=abs(cwtmatr).max(), vmin=-abs(cwtmatr).max())
+	ax3.set_xlabel('Time (months)')
+	ax3.set_ylabel('Scale')
+	ax3.set_title('Beta3')
+
+
+
+	plt.show()
+
+
+def meanError(actual, naive, wavelet):
+	idx_1994 = actual.index.get_loc(dt.datetime.strptime('1994-01-31', '%Y-%m-%d'))
+	idx_2000 = actual.index.get_loc(dt.datetime.strptime('2000-12-29', '%Y-%m-%d'))
+	err = roll(wavelet.ix[:,:], -1, axis=0) 
+
+
+	trace1 = go.Scatter(
+		x = maturities, 
+		y = (err[:-1,:]-actual.ix[idx_1994:idx_2000-1]).mean().abs(),
+		name='Wavelet-extended')
+
+	trace2 = go.Scatter(
+	    x = maturities, 
+	    y = (naive - \
+	    actual.ix[idx_1994:idx_2000]).mean().abs(),
+	    name='Naive')
+
+
+	layout = go.Layout(
+	        titlefont=dict(
+	            size=16),
+	        legend= dict(
+	            font=dict(
+	                size=18)),
+            title='Mean Absolute Error',
+	        width=600,
+	        height=480,
+	        xaxis=dict(
+	            title='Maturity (months)'),
+	        yaxis=dict(
+	            title='Mean Error (yield percentage)')
+	        )
+
+	data = [trace1, trace2]
+
+	return go.Figure(data=data, layout=layout)
 
 
 
