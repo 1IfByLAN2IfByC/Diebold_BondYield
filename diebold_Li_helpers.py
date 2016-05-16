@@ -139,7 +139,7 @@ def yieldContors(ratedata):
 	    ]
 
 	layout = go.Layout(
-	    title='Fig 2: Yields vs. Maturities',
+	    title='Yields vs. Maturities',
 	    width=640,
 	    height=480,
 	                xaxis=dict(
@@ -168,7 +168,7 @@ def exampleYield(ratedata, loc):
 	if len(loc) ==1:
 		tit = str('Fig 3: '+ ratedata.index[loc[0]])
 	else:
-		tit = "Fig 3: Sample Yield Curves"
+		tit = "Sample Yield Curves"
 	layout = go.Layout(
             width=640,
             height=480,
@@ -192,8 +192,23 @@ def exampleYield(ratedata, loc):
                     size=12))
 
                 )
+
+	trace1 = go.Scatter(
+		y = ratedata.ix[loc[0], :], 
+		x = ratedata.index)
+
+	trace2 = go.Scatter(
+		y = ratedata.ix[loc[1], :], 
+		x = ratedata.index)
+
+	trace3 = go.Scatter(
+		y = ratedata.ix[loc[2], :], 
+		x = ratedata.index)
+
+	data = [trace1, trace2, trace3]
+
             
-	return ratedata.iloc[loc,:].transpose().iplot(kind='scatter', layout=layout)
+	return go.Figure(data=data, layout=layout)
 
 
 def beta_resid(residuals):
@@ -209,9 +224,50 @@ def beta_resid(residuals):
 	            width=640,
 	            height=480,
 	            )
-	return resid_interest.iplot(subplots=True, \
-		title='Residuals for selected maturity periods', layout=layout)
 
+
+	trace1 = go.Scatter(
+		y = resid_interest.iloc[0, :], 
+		x = resid_interest.index, 
+		name='3 MO')
+
+
+	trace2 = go.Scatter(
+		y = resid_interest.iloc[1, :], 
+		x = resid_interest.index, 
+		name = '6 MO')
+
+	trace3 = go.Scatter(
+		y = resid_interest.iloc[2, :], 
+		x = resid_interest.index,
+		name= '12 MO')
+
+	trace4 = go.Scatter(
+		y = resid_interest.iloc[3, :], 
+		x = resid_interest.index,
+		name='24 MO')
+
+	trace5 = go.Scatter(
+		y = resid_interest.iloc[4, :], 
+		x = resid_interest.index, 
+		name='60 MO')
+
+	trace6 = go.Scatter(
+		y = resid_interest.iloc[5, :], 
+		x = resid_interest.index, 
+		name='120 MO')
+
+
+	fig = py.tools.make_subplots(rows=3, cols=2, print_grid=False)
+	fig.append_trace(trace1,1,1)
+	fig.append_trace(trace2, 2,1)
+	fig.append_trace(trace3, 3,1)
+	fig.append_trace(trace4, 1,2)
+	fig.append_trace(trace5, 2,2)
+	fig.append_trace(trace6, 3,2)
+
+	fig['layout'].update(layout)
+	return fig
 
 def beta_dist(beta_fits):
 	fig, axes = plt.subplots(1,3, figsize=(10,7))
